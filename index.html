@@ -3,70 +3,157 @@
 <head>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { background: #050505; color: #00ff00; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
-        #screen { 
-            width: 100vw; height: 60vh; background: #000; 
-            border-bottom: 2px solid #00ff00; box-shadow: inset 0 0 20px #00ff0033;
-        }
-        canvas { width: 100%; height: 100%; }
-        #input-area { padding: 15px; height: 40vh; box-sizing: border-box; }
-        textarea { 
-            width: 100%; height: 70%; background: #111; color: #0f0; 
-            border: 1px solid #0f0; border-radius: 5px; padding: 10px; font-family: monospace;
-        }
-        button { 
-            width: 100%; height: 20%; margin-top: 10px; background: #0f0; 
-            color: #000; border: none; font-weight: bold; cursor: pointer; text-transform: uppercase;
-        }
-    </style>
-</head>
-<body>
-    <div id="screen"><canvas id="canvas"></canvas></div>
-    <div id="input-area">
-        <textarea id="code" placeholder="ADD ITEM 'PLAYER' BLUE&#10;MOVE TO 100 100&#10;TEXT 'SYSTEM READY'"></textarea>
-        <button onclick="run()">Execute Script</button>
-    </div>
-
-    <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand();
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Установка разрешения
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight * 0.6;
-
-        function run() {
-            const code = document.getElementById('code').value;
-            const lines = code.split('\n');
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Очистка
-            
-            ctx.strokeStyle = '#0f0';
-            ctx.fillStyle = '#0f0';
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#0f0";
-
-            lines.forEach(line => {
-                const p = line.toUpperCase().split(' ');
-                if(p[0] === 'ADD') {
-                    // Рисуем объект (например, квадрат)
-                    ctx.fillStyle = p[3] || 'lime';
-                    ctx.fillRect(50, 50, 40, 40);
-                }
-                if(p[0] === 'MOVE') {
-                    // В реальном движке тут была бы анимация
-                    ctx.fillRect(parseInt(p[3]), parseInt(p[4]), 40, 40);
-                }
-                if(p[0] === 'TEXT') {
-                    ctx.font = "20px Monospace";
-                    ctx.fillText(line.match(/'([^']+)'/)[1], 20, canvas.height - 20);
-                }
-                if(p[0] === 'BACKGROUND') {
-                    document.getElementById('screen').style.background = p[2].toLowerCase();
-                }
-            });
+        :root { --glow-color: #0f0; }
+        body { background: #000; color: #0f0; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        #app-container { flex-grow: 1; position: relative; border: 5px solid transparent; transition: border-color 0.3s; }
+        #canvas { width: 100%; height: 100%; display: block; }
+        .controls { padding: 10px; background: #111; height: 40%; border-top: 2px solid var(--glow-color); }
+        textarea { width: 100%; height: 75%; background: #000; color: #0f0; border: 1px solid #333; font-size: 12px; padding: 5px; outline: none; }
+        button { width: 100%; padding: 12px; background: var(--glow-color); color: #000; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; text-transform: uppercase; }
+        
+        /* Эффекты свечения */
+        .glow-active { box-shadow: inset 0 0 30px var(--glow-color), 0 0 20px var(--glow-color); border-color: var(--glow-color) !important; }
+        .rainbow-glow { animation: rainbow 2s linear infinite; border-color: white !important; }
+        @keyframes rainbow {
+            0% { box-shadow: inset 0 0 20px red; border-color: red; }
+            25% { box-shadow: inset 0 0 20px yellow; border-color: yellow; }
+            50% { box-shadow: inset 0 0 20px lime; border-color: lime; }
+            75% { box-shadow: inset 0 0 20px blue; border-color: blue; }
+            100% { box-shadow: inset 0 0 20px red; border-color: red; }
         }
     </script>
+</head>
+<body>
+    <div id="app-container">
+        <canvas id="canvas"></canvas>
+    </div>
+    <div class="controls">
+        <textarea id="code" spellcheck="false">
+BackgroundColor("black")
+InterfaceGlow("green")
+Local myBox = Cube
+Move to("50,50")
+TextBC("NANO SYSTEM READY", "30,90")
+Wait("1")
+SkullAnim
+print("System Initiated...")
+        </textarea>
+        <button onclick="engine.run()">Execute Script</button>
+    </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const container = document.getElementById('app-container');
+
+// Масштабирование 100x100
+let unitX, unitY;
+function resize() {
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    unitX = canvas.width / 100;
+    unitY = canvas.height / 100;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const engine = {
+    objects: {},
+    logs: [],
+    intervals: [],
+    
+    async run() {
+        this.stopAll();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const code = document.getElementById('code').value;
+        const lines = code.split('\n');
+        await this.parse(lines);
+    },
+
+    stopAll() {
+        this.intervals.forEach(clearInterval);
+        this.intervals = [];
+        this.objects = {};
+        container.className = "";
+        container.style.backgroundColor = "black";
+    },
+
+    async parse(lines) {
+        for (let line of lines) {
+            line = line.trim();
+            if (!line || line.startsWith("//")) continue;
+
+            // Извлечение команды и аргументов
+            const cmdMatch = line.match(/^(\w+)(?:\s+(\w+)\s*=\s*(\w+))?(?:\("?([^"]*)"?\))?/);
+            if (!cmdMatch) continue;
+
+            let [full, cmd, varName, varValue, arg] = cmdMatch;
+
+            try {
+                // Обработка команд
+                if (line.startsWith("Local")) {
+                    this.objects[varName] = { type: varValue, x: 0, y: 0, visible: true, color: 'white', text: '' };
+                    this.currentObj = this.objects[varName];
+                }
+                if (line.includes('BackgroundColor')) container.style.backgroundColor = arg;
+                if (line.includes('InterfaceGlow')) {
+                    container.style.setProperty('--glow-color', arg);
+                    container.classList.add('glow-active');
+                }
+                if (line.includes('RNBOWGlow')) container.classList.add('rainbow-glow');
+                if (line.includes('Wait')) await new Promise(r => setTimeout(r, parseFloat(arg) * 1000));
+                
+                if (line.includes('Move to')) {
+                    let [x, y] = arg.split(',').map(Number);
+                    this.currentObj.x = x; this.currentObj.y = y;
+                    this.draw();
+                }
+
+                if (line.includes('print')) console.log("%c[Console]: " + arg, "color: lime");
+                
+                if (line.includes('TextBC')) {
+                    let [txt, pos] = arg.split('", "'); // Простой фикс парсинга
+                    let [x, y] = pos.split(',').map(Number);
+                    ctx.fillStyle = "white";
+                    ctx.fillText(txt, x * unitX, y * unitY);
+                }
+
+                if (line.includes('SkullAnim')) this.startAnim('skull');
+                if (line.includes('Stopall')) this.stopAll();
+
+            } catch(e) { console.error("Error at: " + line, e); }
+        }
+    },
+
+    startAnim(type) {
+        const frames = {
+            skull: ["💀", "🦴"],
+            money: ["💵", "💸", "💰"],
+            btc: ["₿", " "],
+            ssmenuc: ["S S M E N U C", ". . . . . . ."]
+        };
+        let f = 0;
+        let int = setInterval(() => {
+            ctx.clearRect(0, 80*unitY, canvas.width, 20*unitY);
+            ctx.font = "30px Arial";
+            ctx.fillText(frames[type][f % frames[type].length], 45 * unitX, 50 * unitY);
+            f++;
+        }, 500);
+        this.intervals.push(int);
+    },
+
+    draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let id in this.objects) {
+            let obj = this.objects[id];
+            if (!obj.visible) continue;
+            ctx.fillStyle = obj.color;
+            if (obj.type === 'Cube') {
+                ctx.fillRect(obj.x * unitX, obj.y * unitY, 10 * unitX, 10 * unitX);
+            }
+        }
+    }
+};
+</script>
 </body>
 </html>
