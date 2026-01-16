@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root { --glow: #0f0; }
+        body { background: #000; color: #0f0; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        #screen-wrap { flex-grow: 1; position: relative; border: 4px solid #111; margin: 5px; transition: 0.3s; overflow: hidden; }
+        canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+        .ui { padding: 10px; background: #0a0a0a; height: 45%; border-top: 1px solid #333; }
+        textarea { width: 100%; height: 70%; background: #000; color: #0f0; border: 1px solid #0f0; font-size: 11px; padding: 5px; outline: none; resize: none; }
+        button { width: 100%; padding: 12px; background: #0f0; color: #000; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
+        
+        /* Эффекты */
+        .glow { box-shadow: inset 0 0 20px var(--glow), 0 0 15px var(--glow); border-color: var(--glow) !important; }
+        .rainbow { animation: rb 2s linear infinite; }
+        @keyframes rb { 0% { border-color: red; box-shadow: inset 0 0 15px red; } 25% { border-color: yellow; box-shadow: inset 0 0 15px yellow; } 50% { border-color: lime; box-shadow: inset 0 0 15px lime; } 75% { border-color: blue; box-shadow: inset 0 0 15px blue; } 100% { border-color: red; box-shadow: inset 0 0 15px red; } }
+    </style>
+</head>
+<body>
+    <div id="screen-wrap"><canvas id="canvas"></canvas></div>
+    <div class="ui">
+        <textarea id="code" spellcheck="false">
+BackgroundColor("black")
+InterfaceGlow("blue")
+Local myPlayer = Cube
+Move to("50,50")
+Wait("1")
+SSMenucAnim
+TextBC("SYSTEM LOADED")
+print("Engine Started")
+        </textarea>
+        <button onclick="engine.run()">RUN SCRIPT</button>
+    </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('screen-wrap');
+let tg = window.Telegram.WebApp;
+tg.expand();
+
+let ux, uy;
+function res() { 
+    canvas.width = wrap.clientWidth; 
+    canvas.height = wrap.clientHeight; 
+    ux = canvas.width/100; uy = canvas.height/100; 
+}
+window.onresize = res; res();
+
+const engine = {
+    objs: {}, 
+    ints: [], 
+    cur: null,
+
+    async run() {
+        this.stopAll();
+        const lines = document.getElementById('code').value.split('\n');
+        await this.exec(lines);
+    },
+
+    stopAll() {
+        this.ints.forEach(clearInterval);
+        this.ints = [];
+        this.objs = {};
+        wrap.className = "";
+        wrap.style.background = "black";
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+    },
+
+    async exec(lines) {
+        for(let l of lines) {
+            l = l.trim(); if(!l || l.startsWith("//")) continue;
+            try {
+                // ПАРСИНГ КОМАНД
+                if(l.startsWith("Local")) {
+                    let n = l.split(" ")[1];
+                    this.objs[n] = { x:50, y:50, v:true, c:'#0f0' };
+                    this.cur = this.objs[n];
+                }
+                if(l.includes("BackgroundColor")) wrap.style.background = this.getArg(l);
+                if(l.includes("InterfaceGlow")) { 
+                    document.documentElement.style.setProperty('--glow', this.getArg(l));
+                    wrap.classList.add('glow');
+                }
+                if(l.includes("RNBOWGlow")) wrap.classList.add('rainbow');
+                if(l.includes("Wait")) await new Promise(r => setTimeout(r, parseFloat(this.getArg(l))*1000));
+                if(l.includes("Move to")) {
+                    let [x,y] = this.getArg(l).split(',').map(Number);
+                    if(this.cur) { this.cur.x = x; this.cur.y = y; this.draw(); }
+                }
+                if(l.includes("print")) console.log("CORE: " + this.getArg(l));
+                if(l.includes("TextBC")) {
+                    ctx.fillStyle = "#fff"; ctx.font = "14px monospace";
+                    ctx.fillText(this.getArg(l), 10, canvas.height - 20);
+                }
+                if(l.includes("Stopall")) this.stopAll();
+                
+                // АНИМАЦИИ
+                if(l.includes("SkullAnim")) this.anim(["💀","☠️"]);
+                if(l.includes("MoneyAnim")) this.anim(["💵","💸","💰"]);
+                if(l.includes("BitcoinAnim")) this.anim(["₿"," "]);
+                if(l.includes("TelegramAnim")) this.anim(["🔹","🔷"]);
+                if(l.includes("SSMenucAnim")) this.anim(["[ S S M ]","[ E N U ]","[ C O R ]"]);
+                if(l.includes("EpicFaceAnim")) this.anim(["⊙◡⊙","⊙_⊙"]);
+                if(l.includes("wAnim")) this.anim(["$ W $","+ W +"]);
+                if(l.includes("LitecoinAnim")) this.anim(["Ł"," "]);
+                if(l.includes("GeminiAnim")) this.anim(["♊"," "]);
+                if(l.includes("ChatgptAnim")) this.anim(["GPT","---"]);
+                if(l.includes("YoutubeAnim")) this.anim(["🟥","⬜"]);
+                if(l.includes("WiFiAnim")) this.anim(["📶","   "]);
+                if(l.includes("HeartAnim")) this.anim(["❤️","💖","💗"]);
+                
+            } catch(e) { console.error(e); }
+        }
+    },
+
+    getArg(l) { return l.match(/\("?([^"]*)"?\)/)[1]; },
+
+    anim(frames) {
+        let f = 0;
+        let i = setInterval(() => {
+            ctx.fillStyle = "#000"; ctx.fillRect(40*ux, 40*uy, 20*ux, 20*uy);
+            ctx.fillStyle = "#0f0"; ctx.font = "20px Arial";
+            ctx.fillText(frames[f%frames.length], 45*ux, 50*uy);
+            f++;
+        }, 300);
+        this.ints.push(i);
+    },
+
+    draw() {
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        for(let k in this.objs) {
+            let o = this.objs[k]; if(!o.v) continue;
+            ctx.fillStyle = o.c; ctx.fillRect(o.x*ux - 5, o.y*uy - 5, 10, 10);
+        }
+    }
+};
+</script>
+</body>
+</html>
