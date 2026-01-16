@@ -3,154 +3,136 @@
 <head>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root { --glow-color: #0f0; }
+        :root { --glow: #0f0; }
         body { background: #000; color: #0f0; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        #app-container { flex-grow: 1; position: relative; border: 5px solid transparent; transition: border-color 0.3s; }
-        #canvas { width: 100%; height: 100%; display: block; }
-        .controls { padding: 10px; background: #111; height: 40%; border-top: 2px solid var(--glow-color); }
-        textarea { width: 100%; height: 75%; background: #000; color: #0f0; border: 1px solid #333; font-size: 12px; padding: 5px; outline: none; }
-        button { width: 100%; padding: 12px; background: var(--glow-color); color: #000; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; text-transform: uppercase; }
+        #screen-wrap { flex-grow: 1; position: relative; border: 4px solid #111; margin: 5px; transition: 0.3s; overflow: hidden; }
+        canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+        .ui { padding: 10px; background: #0a0a0a; height: 45%; border-top: 1px solid #333; }
+        textarea { width: 100%; height: 70%; background: #000; color: #0f0; border: 1px solid #0f0; font-size: 11px; padding: 5px; outline: none; resize: none; }
+        button { width: 100%; padding: 12px; background: #0f0; color: #000; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
         
-        /* Эффекты свечения */
-        .glow-active { box-shadow: inset 0 0 30px var(--glow-color), 0 0 20px var(--glow-color); border-color: var(--glow-color) !important; }
-        .rainbow-glow { animation: rainbow 2s linear infinite; border-color: white !important; }
-        @keyframes rainbow {
-            0% { box-shadow: inset 0 0 20px red; border-color: red; }
-            25% { box-shadow: inset 0 0 20px yellow; border-color: yellow; }
-            50% { box-shadow: inset 0 0 20px lime; border-color: lime; }
-            75% { box-shadow: inset 0 0 20px blue; border-color: blue; }
-            100% { box-shadow: inset 0 0 20px red; border-color: red; }
-        }
-    </script>
+        /* Эффекты */
+        .glow { box-shadow: inset 0 0 20px var(--glow), 0 0 15px var(--glow); border-color: var(--glow) !important; }
+        .rainbow { animation: rb 2s linear infinite; }
+        @keyframes rb { 0% { border-color: red; box-shadow: inset 0 0 15px red; } 25% { border-color: yellow; box-shadow: inset 0 0 15px yellow; } 50% { border-color: lime; box-shadow: inset 0 0 15px lime; } 75% { border-color: blue; box-shadow: inset 0 0 15px blue; } 100% { border-color: red; box-shadow: inset 0 0 15px red; } }
+    </style>
 </head>
 <body>
-    <div id="app-container">
-        <canvas id="canvas"></canvas>
-    </div>
-    <div class="controls">
+    <div id="screen-wrap"><canvas id="canvas"></canvas></div>
+    <div class="ui">
         <textarea id="code" spellcheck="false">
 BackgroundColor("black")
-InterfaceGlow("green")
-Local myBox = Cube
+InterfaceGlow("blue")
+Local myPlayer = Cube
 Move to("50,50")
-TextBC("NANO SYSTEM READY", "30,90")
 Wait("1")
-SkullAnim
-print("System Initiated...")
+SSMenucAnim
+TextBC("SYSTEM LOADED")
+print("Engine Started")
         </textarea>
-        <button onclick="engine.run()">Execute Script</button>
+        <button onclick="engine.run()">RUN SCRIPT</button>
     </div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const container = document.getElementById('app-container');
+const wrap = document.getElementById('screen-wrap');
+let tg = window.Telegram.WebApp;
+tg.expand();
 
-// Масштабирование 100x100
-let unitX, unitY;
-function resize() {
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
-    unitX = canvas.width / 100;
-    unitY = canvas.height / 100;
+let ux, uy;
+function res() { 
+    canvas.width = wrap.clientWidth; 
+    canvas.height = wrap.clientHeight; 
+    ux = canvas.width/100; uy = canvas.height/100; 
 }
-window.addEventListener('resize', resize);
-resize();
+window.onresize = res; res();
 
 const engine = {
-    objects: {},
-    logs: [],
-    intervals: [],
-    
+    objs: {}, 
+    ints: [], 
+    cur: null,
+
     async run() {
         this.stopAll();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const code = document.getElementById('code').value;
-        const lines = code.split('\n');
-        await this.parse(lines);
+        const lines = document.getElementById('code').value.split('\n');
+        await this.exec(lines);
     },
 
     stopAll() {
-        this.intervals.forEach(clearInterval);
-        this.intervals = [];
-        this.objects = {};
-        container.className = "";
-        container.style.backgroundColor = "black";
+        this.ints.forEach(clearInterval);
+        this.ints = [];
+        this.objs = {};
+        wrap.className = "";
+        wrap.style.background = "black";
+        ctx.clearRect(0,0,canvas.width,canvas.height);
     },
 
-    async parse(lines) {
-        for (let line of lines) {
-            line = line.trim();
-            if (!line || line.startsWith("//")) continue;
-
-            // Извлечение команды и аргументов
-            const cmdMatch = line.match(/^(\w+)(?:\s+(\w+)\s*=\s*(\w+))?(?:\("?([^"]*)"?\))?/);
-            if (!cmdMatch) continue;
-
-            let [full, cmd, varName, varValue, arg] = cmdMatch;
-
+    async exec(lines) {
+        for(let l of lines) {
+            l = l.trim(); if(!l || l.startsWith("//")) continue;
             try {
-                // Обработка команд
-                if (line.startsWith("Local")) {
-                    this.objects[varName] = { type: varValue, x: 0, y: 0, visible: true, color: 'white', text: '' };
-                    this.currentObj = this.objects[varName];
+                // ПАРСИНГ КОМАНД
+                if(l.startsWith("Local")) {
+                    let n = l.split(" ")[1];
+                    this.objs[n] = { x:50, y:50, v:true, c:'#0f0' };
+                    this.cur = this.objs[n];
                 }
-                if (line.includes('BackgroundColor')) container.style.backgroundColor = arg;
-                if (line.includes('InterfaceGlow')) {
-                    container.style.setProperty('--glow-color', arg);
-                    container.classList.add('glow-active');
+                if(l.includes("BackgroundColor")) wrap.style.background = this.getArg(l);
+                if(l.includes("InterfaceGlow")) { 
+                    document.documentElement.style.setProperty('--glow', this.getArg(l));
+                    wrap.classList.add('glow');
                 }
-                if (line.includes('RNBOWGlow')) container.classList.add('rainbow-glow');
-                if (line.includes('Wait')) await new Promise(r => setTimeout(r, parseFloat(arg) * 1000));
+                if(l.includes("RNBOWGlow")) wrap.classList.add('rainbow');
+                if(l.includes("Wait")) await new Promise(r => setTimeout(r, parseFloat(this.getArg(l))*1000));
+                if(l.includes("Move to")) {
+                    let [x,y] = this.getArg(l).split(',').map(Number);
+                    if(this.cur) { this.cur.x = x; this.cur.y = y; this.draw(); }
+                }
+                if(l.includes("print")) console.log("CORE: " + this.getArg(l));
+                if(l.includes("TextBC")) {
+                    ctx.fillStyle = "#fff"; ctx.font = "14px monospace";
+                    ctx.fillText(this.getArg(l), 10, canvas.height - 20);
+                }
+                if(l.includes("Stopall")) this.stopAll();
                 
-                if (line.includes('Move to')) {
-                    let [x, y] = arg.split(',').map(Number);
-                    this.currentObj.x = x; this.currentObj.y = y;
-                    this.draw();
-                }
-
-                if (line.includes('print')) console.log("%c[Console]: " + arg, "color: lime");
+                // АНИМАЦИИ
+                if(l.includes("SkullAnim")) this.anim(["💀","☠️"]);
+                if(l.includes("MoneyAnim")) this.anim(["💵","💸","💰"]);
+                if(l.includes("BitcoinAnim")) this.anim(["₿"," "]);
+                if(l.includes("TelegramAnim")) this.anim(["🔹","🔷"]);
+                if(l.includes("SSMenucAnim")) this.anim(["[ S S M ]","[ E N U ]","[ C O R ]"]);
+                if(l.includes("EpicFaceAnim")) this.anim(["⊙◡⊙","⊙_⊙"]);
+                if(l.includes("wAnim")) this.anim(["$ W $","+ W +"]);
+                if(l.includes("LitecoinAnim")) this.anim(["Ł"," "]);
+                if(l.includes("GeminiAnim")) this.anim(["♊"," "]);
+                if(l.includes("ChatgptAnim")) this.anim(["GPT","---"]);
+                if(l.includes("YoutubeAnim")) this.anim(["🟥","⬜"]);
+                if(l.includes("WiFiAnim")) this.anim(["📶","   "]);
+                if(l.includes("HeartAnim")) this.anim(["❤️","💖","💗"]);
                 
-                if (line.includes('TextBC')) {
-                    let [txt, pos] = arg.split('", "'); // Простой фикс парсинга
-                    let [x, y] = pos.split(',').map(Number);
-                    ctx.fillStyle = "white";
-                    ctx.fillText(txt, x * unitX, y * unitY);
-                }
-
-                if (line.includes('SkullAnim')) this.startAnim('skull');
-                if (line.includes('Stopall')) this.stopAll();
-
-            } catch(e) { console.error("Error at: " + line, e); }
+            } catch(e) { console.error(e); }
         }
     },
 
-    startAnim(type) {
-        const frames = {
-            skull: ["💀", "🦴"],
-            money: ["💵", "💸", "💰"],
-            btc: ["₿", " "],
-            ssmenuc: ["S S M E N U C", ". . . . . . ."]
-        };
+    getArg(l) { return l.match(/\("?([^"]*)"?\)/)[1]; },
+
+    anim(frames) {
         let f = 0;
-        let int = setInterval(() => {
-            ctx.clearRect(0, 80*unitY, canvas.width, 20*unitY);
-            ctx.font = "30px Arial";
-            ctx.fillText(frames[type][f % frames[type].length], 45 * unitX, 50 * unitY);
+        let i = setInterval(() => {
+            ctx.fillStyle = "#000"; ctx.fillRect(40*ux, 40*uy, 20*ux, 20*uy);
+            ctx.fillStyle = "#0f0"; ctx.font = "20px Arial";
+            ctx.fillText(frames[f%frames.length], 45*ux, 50*uy);
             f++;
-        }, 500);
-        this.intervals.push(int);
+        }, 300);
+        this.ints.push(i);
     },
 
     draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for (let id in this.objects) {
-            let obj = this.objects[id];
-            if (!obj.visible) continue;
-            ctx.fillStyle = obj.color;
-            if (obj.type === 'Cube') {
-                ctx.fillRect(obj.x * unitX, obj.y * unitY, 10 * unitX, 10 * unitX);
-            }
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        for(let k in this.objs) {
+            let o = this.objs[k]; if(!o.v) continue;
+            ctx.fillStyle = o.c; ctx.fillRect(o.x*ux - 5, o.y*uy - 5, 10, 10);
         }
     }
 };
